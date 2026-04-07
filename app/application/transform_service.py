@@ -1,11 +1,14 @@
 # Logica de Negocio (Use Case)
-from typing import Any, Dict
+from typing import Any, Dict, List
 
+from sqlalchemy.orm import Session
 from app.domain.repository.ingestion_repository import (
     IngestionRepository,  # ← clase pura (Port)
 )
 from app.schemas.ingestion import TestIngestRequest  # ← schema correcto
-
+from app.domain.repository.zone_repository import ZoneRepository
+from app.schemas.ingestion import TestIngestRequest
+from app.infrastructure.clients.ingestion_client import IngestionClient
 
 class TransformService:
     """USE CASE: Lógica de negocio de transformación.
