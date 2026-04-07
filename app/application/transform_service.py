@@ -1,4 +1,3 @@
-# Logica de Negocio (Use Case)
 import time
 from typing import Any, Dict
 
@@ -40,6 +39,25 @@ class TransformService:
         # Convertir a Pandas DataFrame
         df = pd.DataFrame(records)
         
+        # =========================================================
+        # 🧠 NUEVO CEREBRO: DETECCIÓN AUTOMÁTICA DE ZONA
+        # =========================================================
+        keywords = ['DEPARTAMENTO', 'ESTADO', 'CIUDAD', 'REGION', 'ZONA', 'PROVINCIA', 'MUNICIPIO']
+        col_zona_detectada = None
+        
+        # 1. Buscamos si el CSV trae alguna columna que haga match con las palabras clave
+        for col in df.columns:
+            if any(keyword in str(col).upper() for keyword in keywords):
+                col_zona_detectada = col
+                break
+                
+        # 2. Si no hay match (CSV muy raro), asumimos la primera columna de texto
+        if not col_zona_detectada:
+            cols_texto = df.select_dtypes(include=['object', 'string']).columns
+            if len(cols_texto) > 0:
+                col_zona_detectada = cols_texto[0]
+        # =========================================================
+
         # 2. Pipeline de limpieza en memoria
         text_cols = df.select_dtypes(include=['object', 'string']).columns
         for col in text_cols:
@@ -78,10 +96,20 @@ class TransformService:
         zone_instances = []
         for _, row in df.iterrows():
             z_code = str(row.get('ZONE_CODE', row.get('zone_code', str(_))))
-            z_name = str(row.get('ZONE_NAME', row.get('zone_name', 'UNKNOWN')))
+            
+            # 👇 UTILIZAMOS LA COLUMNA DETECTADA POR EL CEREBRO 👇
+            if col_zona_detectada:
+                z_name = str(row.get(col_zona_detectada, 'UNKNOWN'))
+            else:
+                z_name = str(row.get('ZONE_NAME', row.get('zone_name', 'UNKNOWN')))
+                
             region = str(row.get('REGION', row.get('region', 'N/A')))
             
+            # Agregamos la columna detectada a las handled_keys para que no se duplique en metrics
             handled_keys = {'ZONE_CODE', 'zone_code', 'ZONE_NAME', 'zone_name', 'REGION', 'region'}
+            if col_zona_detectada:
+                handled_keys.add(col_zona_detectada)
+                
             metrics_dict = {k: v for k, v in row.to_dict().items() if k not in handled_keys}
 
             zone_analytics = ZoneAnalytics(
@@ -98,5 +126,6 @@ class TransformService:
 
         return {
             "transformed_records": transformed_records,
+            "zone_column_detected": col_zona_detectada,  # Agregado al return para saber qué columna eligió
             "execution_time_ms": round(execution_time_ms, 2)
         }
