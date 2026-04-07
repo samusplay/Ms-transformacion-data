@@ -1,27 +1,39 @@
-import uuid
 import asyncio
+import uuid
+
+# Librerías de terceros
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+# Módulos locales: Aplicación y Dominio
 from app.application.transform_service import TransformService
-
-# ==================== INYECCIÓN DE DEPENDENCIAS ====================
 from app.domain.repository.ingestion_repository import IngestionRepository
+
+# Módulos locales: Infraestructura
+from app.infrastructure.database import get_db
+from app.infrastructure.http_client import send_audit_event
 from app.infrastructure.repositories.ingestion_repository_impl import (
     IngestionRepositoryImpl,
 )
-from app.schemas.ingestion import TestIngestRequest
 
-from app.infrastructure.database import get_db
-# ============================================================
+# Módulos locales: Schemas (Contratos)
+from app.schemas.base_response import StandardResponse
+from app.schemas.ingestion import TestIngestRequest
+from app.schemas.transform import TransformMetricsResponse
+
+# ==================== INYECCIÓN DE DEPENDENCIAS ====================
 
 def get_ingestion_repository() -> IngestionRepository:
+    """Instancia el adaptador de infraestructura"""
     return IngestionRepositoryImpl()
 
 def get_transform_service(
     repo: IngestionRepository = Depends(get_ingestion_repository)
 ) -> TransformService:
+    """Inyecta el repositorio en el caso de uso (TransformService)"""
     return TransformService(ingestion_repository=repo)
+
+# ============================================================
 
 transform_router = APIRouter(
     prefix="/api/v1/transform",
@@ -42,10 +54,8 @@ async def test_connection_to_ingestion(
         "respuesta_desde_ingestion": resultado
     }
 
-# ==================== NUEVO SPRINT 1 ====================
-from app.schemas.base_response import StandardResponse
-from app.schemas.transform import TransformMetricsResponse
-from app.infrastructure.http_client import send_audit_event
+
+# ==================== ENDPOINTS SPRINT 1 ====================
 
 @transform_router.get("/health", response_model=StandardResponse)
 async def health_check():
@@ -60,7 +70,7 @@ async def health_check():
 
 @transform_router.post("/{dataset_load_id}", response_model=StandardResponse)
 async def process_dataset(
-    dataset_load_id: int, 
+    dataset_load_id: str,
     db: Session = Depends(get_db),
     service: TransformService = Depends(get_transform_service)
 ):

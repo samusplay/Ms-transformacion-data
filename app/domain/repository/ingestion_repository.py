@@ -17,6 +17,6 @@ class IngestionRepository(ABC):
         pass
 
     @abstractmethod
-    async def fetch_raw_data(self, dataset_load_id: int) -> Dict[str, Any]:
+    async def fetch_raw_data(self, dataset_load_id: str) -> Dict[str, Any]:
         """Obtiene los registros del dataset validados por ms-ingestion"""
         pass

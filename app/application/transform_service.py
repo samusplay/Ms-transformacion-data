@@ -1,14 +1,15 @@
 # Logica de Negocio (Use Case)
-import pandas as pd
 import time
 from typing import Any, Dict
 
+import pandas as pd
 from sqlalchemy.orm import Session
+
 from app.domain.repository.ingestion_repository import (
     IngestionRepository,  # ← clase pura (Port)
 )
-from app.schemas.ingestion import TestIngestRequest  # ← schema correcto
 from app.infrastructure.models import TransformationLog, ZoneAnalytics
+from app.schemas.ingestion import TestIngestRequest  # ← schema correcto
 
 
 class TransformService:
@@ -24,7 +25,7 @@ class TransformService:
         request = TestIngestRequest(texto=texto)
         return await self.ingestion_repository.send_test_data(request)
 
-    async def process_dataset(self, dataset_load_id: int, db: Session) -> Dict[str, Any]:
+    async def process_dataset(self, dataset_load_id: str, db: Session) -> Dict[str, Any]:
         """Ejecuta el pipeline de transformación completo"""
         start_time = time.time()
         
