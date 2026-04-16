@@ -4,6 +4,7 @@ from typing import Any, Dict
 import pandas as pd
 from sqlalchemy.orm import Session
 
+from app.domain.analytics_client import IAnalyticsClient
 from app.domain.repository.ingestion_repository import (
     IngestionRepository,  # ← clase pura (Port)
 )
@@ -15,9 +16,10 @@ class TransformService:
     """USE CASE: Lógica de negocio de transformación.
     Solo depende del Port (IngestionRepository) → SOLID (DIP)"""
 
-    def __init__(self, ingestion_repository: IngestionRepository):
+    def __init__(self, ingestion_repository: IngestionRepository,analytics_client:IAnalyticsClient):
         """Constructor recibe la interfaz pura (nunca la implementación)"""
         self.ingestion_repository = ingestion_repository
+        self.analytics_client=analytics_client
 
     async def test_connection_to_ingestion(self, texto: str) -> Dict[str, Any]:
         """Prueba de conexión hacia ms-ingestion"""
@@ -123,6 +125,25 @@ class TransformService:
         
         db.add_all(zone_instances)
         db.commit()
+
+        #envio al microservicio de analytics
+        cleaned_data_payload=[
+            {
+                "zone_code": zi.zone_code,
+                "zone_name": zi.zone_name,
+                "region": zi.region,
+                "metrics": zi.metrics
+            }
+            for zi in zone_instances
+        ]
+        #enviamos los datos asincronicamente
+        try:
+            await self.analytics_client.send_transformed_data(
+                dataset_load_id=dataset_load_id,
+                data=cleaned_data_payload
+            )
+        except Exception as e:
+            print(f"Advertencia: No se pudo enviar al pipeline de analítica -> {e}")
 
         return {
             "transformed_records": transformed_records,

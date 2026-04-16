@@ -11,6 +11,7 @@ from app.domain.repository.ingestion_repository import IngestionRepository
 
 # Módulos locales: Infraestructura
 from app.infrastructure.database import get_db
+from app.infrastructure.http_analytics_client import HttpAnalyticsClient
 from app.infrastructure.http_client import send_audit_event
 from app.infrastructure.repositories.ingestion_repository_impl import (
     IngestionRepositoryImpl,
@@ -30,8 +31,10 @@ def get_ingestion_repository() -> IngestionRepository:
 def get_transform_service(
     repo: IngestionRepository = Depends(get_ingestion_repository)
 ) -> TransformService:
+    #nueva herramienta
+    cliente_analitica=HttpAnalyticsClient()
     """Inyecta el repositorio en el caso de uso (TransformService)"""
-    return TransformService(ingestion_repository=repo)
+    return TransformService(ingestion_repository=repo,analytics_client=cliente_analitica)
 
 # ============================================================
 
@@ -72,6 +75,7 @@ async def health_check():
 async def process_dataset(
     dataset_load_id: str,
     db: Session = Depends(get_db),
+    #inyeccion de dependencias
     service: TransformService = Depends(get_transform_service)
 ):
     """HU-07: Iniciar el proceso de ETL en memoria y persistir"""
