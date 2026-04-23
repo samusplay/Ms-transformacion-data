@@ -18,7 +18,7 @@ class HttpAnalyticsClient(IAnalyticsClient):
     async def send_transformed_data(self, dataset_load_id: str, data: List[Dict[str, Any]]) -> bool:
         
         #ruta que va consumir el microservicio de analytics
-        endpoint = f"{self.base_url}/internal/sync/{dataset_load_id}"
+        endpoint = f"{self.base_url}/api/v1/analytics/internal/sync/{dataset_load_id}"
 
         #empacamos
         payload={"data":data}

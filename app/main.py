@@ -2,7 +2,6 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.infrastructure import models
 from app.infrastructure.database import check_db_connection
 from app.routers.api import api_router
 
