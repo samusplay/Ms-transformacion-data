@@ -264,6 +264,4 @@ Ejemplo: `test_process_dataset_empty_data_raises_error`
 
 ---
 
-## Contacto / Soporte
 
-Para preguntas sobre las pruebas, revisar la documentación en cada archivo o consultar al equipo de desarrollo.
