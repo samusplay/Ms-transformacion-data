@@ -1,4 +1,5 @@
 import time
+import asyncio
 from typing import Any, Dict
 
 import pandas as pd
@@ -7,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.domain.repository.ingestion_repository import (
     IngestionRepository,  # ← clase pura (Port)
 )
+from app.domain.repository.audit_client_port import AuditClientPort
 from app.infrastructure.models import TransformationLog, ZoneAnalytics
 from app.schemas.ingestion import TestIngestRequest  # ← schema correcto
 
@@ -15,16 +17,17 @@ class TransformService:
     """USE CASE: Lógica de negocio de transformación.
     Solo depende del Port (IngestionRepository) → SOLID (DIP)"""
 
-    def __init__(self, ingestion_repository: IngestionRepository):
+    def __init__(self, ingestion_repository: IngestionRepository, audit_client: AuditClientPort = None):
         """Constructor recibe la interfaz pura (nunca la implementación)"""
         self.ingestion_repository = ingestion_repository
+        self.audit_client = audit_client
 
     async def test_connection_to_ingestion(self, texto: str) -> Dict[str, Any]:
         """Prueba de conexión hacia ms-ingestion"""
         request = TestIngestRequest(texto=texto)
         return await self.ingestion_repository.send_test_data(request)
 
-    async def process_dataset(self, dataset_load_id: str, db: Session) -> Dict[str, Any]:
+    async def process_dataset(self, dataset_load_id: str, db: Session, trace_id: str = None) -> Dict[str, Any]:
         """Ejecuta el pipeline de transformación completo"""
         start_time = time.time()
         
@@ -34,7 +37,10 @@ class TransformService:
         # Asegurarnos de que recibimos una lista de records
         records = raw_data.get("data", []) if isinstance(raw_data, dict) else raw_data
         if not records:
-            raise ValueError("El dataset provisto por Ingesta está vacío o no es válido.")
+            error_msg = "El dataset provisto por Ingesta está vacío o no es válido."
+            if self.audit_client and trace_id:
+                asyncio.create_task(self.audit_client.send_event("TRANSFORMATION_ERROR", str(dataset_load_id), error_msg, trace_id))
+            raise ValueError(error_msg)
 
         # Convertir a Pandas DataFrame
         df = pd.DataFrame(records)
@@ -78,7 +84,10 @@ class TransformService:
             df = df.dropna(subset=['zone_code'])
 
         if df.empty:
-            raise ValueError("El dataset quedó vacío tras el proceso de limpieza de zone_code.")
+            error_msg = "El dataset quedó vacío tras el proceso de limpieza de zone_code."
+            if self.audit_client and trace_id:
+                asyncio.create_task(self.audit_client.send_event("TRANSFORMATION_ERROR", str(dataset_load_id), error_msg, trace_id))
+            raise ValueError(error_msg)
 
         # 3. Persistencia 
         execution_time_ms = (time.time() - start_time) * 1000
@@ -123,6 +132,16 @@ class TransformService:
         
         db.add_all(zone_instances)
         db.commit()
+
+        if self.audit_client and trace_id:
+            asyncio.create_task(
+                self.audit_client.send_event(
+                    event_type="TRANSFORMATION_COMPLETED",
+                    reference_id=str(dataset_load_id),
+                    summary=f"Finalizó exitosamente el proceso de limpieza y guardado. Registros: {transformed_records}",
+                    trace_id=trace_id
+                )
+            )
 
         return {
             "transformed_records": transformed_records,
