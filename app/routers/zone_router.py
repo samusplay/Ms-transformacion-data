@@ -31,15 +31,50 @@ def get_zones(
 ):
     """
     Endpoint para obtener las zonas disponibles y su cantidad de proyectos.
-    Cumple CA 1 y CA 2 de la Historia de Usuario.
     """
-    # El servicio se encarga de ir a la BD y armar la lista de diccionarios
     zones_summary = service.get_zones_summary(db)
     
     return {
         "success": True,
         "data": {
-            "zones": zones_summary # Retorna el JSON estructurado o [] si no hay datos
+            "zones": zones_summary
         },
+        "error": None
+    }
+
+@zone_router.get("/zones/metrics", status_code=200)
+def get_zone_metrics(
+    names: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Endpoint para obtener las métricas detalladas de zonas específicas.
+    Recibe: ?names=VALLE,SANTANDER
+    """
+    from app.infrastructure.models import ZoneAnalytics
+    from sqlalchemy import func
+
+    zone_names = [n.strip().upper() for n in names.split(",") if n.strip()]
+    
+    results = []
+    for zone_name in zone_names:
+        # Traemos la última entrada de esa zona
+        zone = (
+            db.query(ZoneAnalytics)
+            .filter(ZoneAnalytics.zone_name == zone_name)
+            .order_by(ZoneAnalytics.id.desc())
+            .first()
+        )
+        if zone:
+            results.append({
+                "name": zone.zone_name,
+                "zone_code": zone.zone_code,
+                "region": zone.region,
+                "metrics": zone.metrics or {}
+            })
+    
+    return {
+        "success": True,
+        "data": {"zones": results},
         "error": None
     }
