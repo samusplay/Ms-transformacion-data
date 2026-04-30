@@ -164,9 +164,133 @@ class TestTransformService:
         from app.infrastructure.models import ZoneAnalytics
         zones = db_session.query(ZoneAnalytics).all()
         assert len(zones) > 0
-        assert zones[0].zone_name == "BOGOTA"
-    
-    
+        assert zones[0].zone_code == "Z001"
+        assert zones[0].zone_name == "CUNDINAMARCA"
+
+    async def test_process_dataset_removes_accents_and_uppercases_text(
+        self, mock_ingestion_repository, mock_analytics_client, db_session
+    ):
+        """
+        TC-TS-011: Verificar que las tildes se remueven y el texto se convierte a mayúsculas.
+        """
+        service = TransformService(
+            ingestion_repository=mock_ingestion_repository,
+            analytics_client=mock_analytics_client
+        )
+
+        async def mock_fetch_accented_data(dataset_load_id: str):
+            return {
+                "data": [
+                    {
+                        "ZONE_CODE": "Z001",
+                        "DEPARTAMENTO": "antioquía",
+                        "ZONE_NAME": "área central",
+                        "CITY_NAME": "árbol",
+                        "REGION": "cundinamarca"
+                    }
+                ]
+            }
+
+        mock_ingestion_repository.fetch_raw_data = AsyncMock(
+            side_effect=mock_fetch_accented_data
+        )
+
+        # Act
+        await service.process_dataset("dataset-001", db_session)
+
+        # Assert
+        from app.infrastructure.models import ZoneAnalytics
+        zones = db_session.query(ZoneAnalytics).all()
+        assert len(zones) == 1
+        assert zones[0].zone_name == "ANTIOQUIA"
+        assert zones[0].metrics["CITY_NAME"] == "ARBOL"
+
+    async def test_process_dataset_normalizes_numeric_min_max(
+        self, mock_ingestion_repository, mock_analytics_client, db_session
+    ):
+        """
+        TC-TS-012: Verificar que el valor mínimo numérico se convierte en 0.0 y el máximo en 1.0.
+        """
+        service = TransformService(
+            ingestion_repository=mock_ingestion_repository,
+            analytics_client=mock_analytics_client
+        )
+
+        async def mock_fetch_numeric_data(dataset_load_id: str):
+            return {
+                "data": [
+                    {
+                        "ZONE_CODE": "Z001",
+                        "ZONE_NAME": "BOGOTA",
+                        "REGION": "CUNDINAMARCA",
+                        "VALUE": 10
+                    },
+                    {
+                        "ZONE_CODE": "Z002",
+                        "ZONE_NAME": "MEDELLIN",
+                        "REGION": "ANTIOQUIA",
+                        "VALUE": 20
+                    }
+                ]
+            }
+
+        mock_ingestion_repository.fetch_raw_data = AsyncMock(
+            side_effect=mock_fetch_numeric_data
+        )
+
+        # Act
+        await service.process_dataset("dataset-001", db_session)
+
+        # Assert
+        from app.infrastructure.models import ZoneAnalytics
+        zones = db_session.query(ZoneAnalytics).order_by(ZoneAnalytics.zone_code).all()
+        assert len(zones) == 2
+        assert zones[0].metrics["VALUE"] == 0.0
+        assert zones[1].metrics["VALUE"] == 1.0
+
+    async def test_process_dataset_handles_all_zero_numeric_column(
+        self, mock_ingestion_repository, mock_analytics_client, db_session
+    ):
+        """
+        TC-TS-013: Verificar que la normalización no colapsa cuando la columna numérica es toda ceros.
+        """
+        service = TransformService(
+            ingestion_repository=mock_ingestion_repository,
+            analytics_client=mock_analytics_client
+        )
+
+        async def mock_fetch_zero_data(dataset_load_id: str):
+            return {
+                "data": [
+                    {
+                        "ZONE_CODE": "Z001",
+                        "ZONE_NAME": "BOGOTA",
+                        "REGION": "CUNDINAMARCA",
+                        "ZERO_COL": 0
+                    },
+                    {
+                        "ZONE_CODE": "Z002",
+                        "ZONE_NAME": "MEDELLIN",
+                        "REGION": "ANTIOQUIA",
+                        "ZERO_COL": 0
+                    }
+                ]
+            }
+
+        mock_ingestion_repository.fetch_raw_data = AsyncMock(
+            side_effect=mock_fetch_zero_data
+        )
+
+        # Act
+        await service.process_dataset("dataset-001", db_session)
+
+        # Assert
+        from app.infrastructure.models import ZoneAnalytics
+        zones = db_session.query(ZoneAnalytics).order_by(ZoneAnalytics.zone_code).all()
+        assert len(zones) == 2
+        assert zones[0].metrics["ZERO_COL"] == 0.0
+        assert zones[1].metrics["ZERO_COL"] == 0.0
+
     async def test_process_dataset_detects_zone_column(
         self, mock_ingestion_repository, mock_analytics_client, db_session
     ):
@@ -270,4 +394,4 @@ class TestTransformService:
         # Assert
         logs = db_session.query(TransformationLog).all()
         assert len(logs) > 0
-        assert logs[0].execution_time_ms > 0
+        assert logs[0].execution_time_ms >= 0

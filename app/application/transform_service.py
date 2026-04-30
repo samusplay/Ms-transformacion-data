@@ -1,4 +1,5 @@
 import time
+import unicodedata
 from typing import Any, Dict
 
 import pandas as pd
@@ -25,6 +26,25 @@ class TransformService:
         """Prueba de conexión hacia ms-ingestion"""
         request = TestIngestRequest(texto=texto)
         return await self.ingestion_repository.send_test_data(request)
+
+    def _clean_text(self, value: Any) -> str:
+        """Elimina acentos y convierte texto a mayúsculas sin espacios extremos."""
+        if pd.isna(value):
+            return ""
+        text = str(value).strip().upper()
+        normalized = unicodedata.normalize("NFKD", text)
+        return "".join(ch for ch in normalized if not unicodedata.combining(ch))
+
+    def _normalize_numeric_column(self, series: pd.Series) -> pd.Series:
+        """Normaliza una serie numérica entre 0.0 y 1.0 con manejo seguro de columnas constantes."""
+        series_clean = series.fillna(0).astype(float)
+        min_val = series_clean.min()
+        max_val = series_clean.max()
+
+        if pd.isna(min_val) or pd.isna(max_val) or min_val == max_val:
+            return series_clean.apply(lambda _: 0.0)
+
+        return ((series_clean - min_val) / (max_val - min_val)).astype(float)
 
     async def process_dataset(self, dataset_load_id: str, db: Session) -> Dict[str, Any]:
         """Ejecuta el pipeline de transformación completo"""
@@ -63,11 +83,11 @@ class TransformService:
         # 2. Pipeline de limpieza en memoria
         text_cols = df.select_dtypes(include=['object', 'string']).columns
         for col in text_cols:
-            df[col] = df[col].astype(str).str.strip().str.upper()
+            df[col] = df[col].apply(self._clean_text)
 
         num_cols = df.select_dtypes(include=['number']).columns
         for col in num_cols:
-            df[col] = df[col].fillna(0)
+            df[col] = self._normalize_numeric_column(df[col])
 
         # Tratar zone_code
         if 'ZONE_CODE' in df.columns:
