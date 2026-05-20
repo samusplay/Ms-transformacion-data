@@ -39,7 +39,8 @@ class TransformService:
         df = pd.DataFrame(records)
 
         # =========================================================
-        # 🧠 CEREBRO: DETECCIÓN AUTOMÁTICA DE ZONA
+        # 🧠 DETECCIÓN AUTOMÁTICA DE COLUMNA DE ZONA
+        # Funciona con cualquier CSV que tenga una columna geográfica
         # =========================================================
         keywords = ['DEPARTAMENTO', 'ESTADO', 'CIUDAD', 'REGION', 'ZONA', 'PROVINCIA', 'MUNICIPIO']
         col_zona_detectada = None
@@ -90,33 +91,48 @@ class TransformService:
             raise ValueError("El dataset quedó vacío tras el proceso de limpieza de zone_code.")
 
         # =========================================================
-        # 🤖 NUEVO: CÁLCULO DINÁMICO DE MÉTRICAS PARA ML
-        # Sin hardcodear nombres de columnas — funciona con cualquier CSV
+        # 🤖 CÁLCULO GENÉRICO DE MÉTRICAS — funciona con cualquier CSV
+        #
+        # Estrategia universal basada en distribución temporal de columnas:
+        #
+        # _poblacion  → actividad RECIENTE (últimas columnas numéricas)
+        #               Representa demanda activa / mercado vivo
+        #
+        # _ingresos   → estabilidad HISTÓRICA (promedio de todas las columnas)
+        #               Representa madurez y consistencia de la zona
+        #
+        # _competencia → volumen TOTAL acumulado (suma de todas las columnas)
+        #               Representa saturación del mercado: a mayor actividad
+        #               histórica total, más competencia existe en esa zona.
+        #               Funciona con cualquier CSV de actividad económica,
+        #               constructiva, comercial, etc.
         # =========================================================
         num_cols_list = df.select_dtypes(include=['number']).columns.tolist()
 
         if len(num_cols_list) >= 2:
-            # poblacion = suma de las últimas columnas numéricas (actividad reciente)
-            cols_recientes = num_cols_list[max(0, len(num_cols_list) - 4):]
+            # POBLACION: suma de las columnas más recientes (último 25% de columnas)
+            n_recientes = max(1, len(num_cols_list) // 4)
+            cols_recientes = num_cols_list[-n_recientes:]
             df['_poblacion'] = df[cols_recientes].sum(axis=1)
 
-            # ingresos = suma de las primeras columnas numéricas (historial/madurez)
-            cols_historicas = num_cols_list[:min(7, len(num_cols_list))]
-            df['_ingresos'] = df[cols_historicas].sum(axis=1)
+            # INGRESOS: promedio histórico de todas las columnas numéricas
+            # El promedio suaviza picos y representa estabilidad
+            df['_ingresos'] = df[num_cols_list].mean(axis=1)
+
+            # COMPETENCIA: volumen total acumulado de toda la actividad
+            # A más actividad histórica total → zona más saturada → más competencia
+            df['_competencia'] = df[num_cols_list].sum(axis=1)
+
         elif len(num_cols_list) == 1:
             df['_poblacion'] = df[num_cols_list[0]]
             df['_ingresos'] = df[num_cols_list[0]]
+            df['_competencia'] = df[num_cols_list[0]]
         else:
             df['_poblacion'] = 1.0
             df['_ingresos'] = 1.0
-
-        # competencia = cuántos registros comparten la misma zona detectada
-        if col_zona_detectada:
-            df['_competencia'] = df.groupby(col_zona_detectada)[col_zona_detectada].transform('count').astype(float)
-        else:
             df['_competencia'] = 1.0
 
-        # Normalizar las 3 métricas entre 0 y 1 (MinMax dinámico)
+        # Normalizar las 3 métricas entre 0 y 1 (MinMax — funciona con cualquier escala)
         for col in ['_poblacion', '_ingresos', '_competencia']:
             mn, mx = df[col].min(), df[col].max()
             if mx > mn:
@@ -157,7 +173,7 @@ class TransformService:
             # metrics_dict contiene las columnas originales del CSV
             metrics_dict = {k: v for k, v in row.to_dict().items() if k not in handled_keys}
 
-            # ── Inyectamos las 3 métricas normalizadas para que ms-analytics las use ──
+            # ── Las 3 métricas normalizadas listas para ms-analytics y ms-ml ──
             metrics_dict['poblacion'] = round(float(row['_poblacion']), 4)
             metrics_dict['ingresos'] = round(float(row['_ingresos']), 4)
             metrics_dict['competencia'] = round(float(row['_competencia']), 4)
