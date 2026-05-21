@@ -8,11 +8,12 @@ from sqlalchemy.orm import Session
 # Módulos locales: Aplicación y Dominio
 from app.application.transform_service import TransformService
 from app.domain.repository.ingestion_repository import IngestionRepository
+from app.domain.repository.audit_client_port import AuditClientPort
 
 # Módulos locales: Infraestructura
 from app.infrastructure.database import get_db
 from app.infrastructure.http_analytics_client import HttpAnalyticsClient
-from app.infrastructure.http_client import send_audit_event
+from app.infrastructure.repositories.audit_client_impl import AuditClientImpl
 from app.infrastructure.repositories.ingestion_repository_impl import (
     IngestionRepositoryImpl,
 )
@@ -28,13 +29,18 @@ def get_ingestion_repository() -> IngestionRepository:
     """Instancia el adaptador de infraestructura"""
     return IngestionRepositoryImpl()
 
+def get_audit_client() -> AuditClientPort:
+    """Instancia el adaptador del cliente de auditoría"""
+    return AuditClientImpl()
+
 def get_transform_service(
-    repo: IngestionRepository = Depends(get_ingestion_repository)
+    repo: IngestionRepository = Depends(get_ingestion_repository),
+    audit_client: AuditClientPort = Depends(get_audit_client)
 ) -> TransformService:
     #nueva herramienta
     cliente_analitica=HttpAnalyticsClient()
     """Inyecta el repositorio en el caso de uso (TransformService)"""
-    return TransformService(ingestion_repository=repo,analytics_client=cliente_analitica)
+    return TransformService(ingestion_repository=repo, analytics_client=cliente_analitica, audit_client=audit_client)
 
 # ============================================================
 
@@ -82,11 +88,10 @@ async def process_dataset(
     trace_id = str(uuid.uuid4())
     try:
         # Llamar al flujo de servicio aplicativo (CA 1, CA 2 y CA 3)
-        metrics = await service.process_dataset(dataset_load_id, db)
+        metrics = await service.process_dataset(dataset_load_id, db, trace_id=trace_id)
         
-        # Enviar evento de auditoria en background silenciosamente (CA 5)
-        # Delegamos a traves de event loop para no frenar la respuesta
-        asyncio.create_task(send_audit_event(dataset_load_id, trace_id))
+        # El envío del evento de auditoría en background (CA 5) ahora es 
+        # delegado limpiamente al TransformService usando el AuditClientPort.
 
         # Responder conforme al CA 4
         return StandardResponse(
