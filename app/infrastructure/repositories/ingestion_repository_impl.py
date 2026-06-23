@@ -29,3 +29,16 @@ class IngestionRepositoryImpl(IngestionRepository):
             )
             response.raise_for_status()
             return response.json()
+
+    async def fetch_raw_data(self, dataset_load_id: str) -> Dict[str, Any]:
+         # Limpiamos base_url por si acaso trae barras al final
+         base = self.base_url.rstrip("/")
+         # Construimos la ruta estándar interna del microservicio
+         url = f"{base}/api/v1/ingesta/datasets/{dataset_load_id}/raw"
+         async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.get(url)
+                response.raise_for_status()
+                return response.json()
+            except httpx.HTTPError as e:
+                raise Exception(f"Falla al conectar con MS Ingesta en la url {url}: {str(e)}")

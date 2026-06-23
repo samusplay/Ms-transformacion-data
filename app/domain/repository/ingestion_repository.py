@@ -15,3 +15,8 @@ class IngestionRepository(ABC):
     async def send_test_data(self, request: TestIngestRequest) -> Dict[str, Any]:
         """Método de prueba para llamar a ms-ingestion"""
         pass
+
+    @abstractmethod
+    async def fetch_raw_data(self, dataset_load_id: str) -> Dict[str, Any]:
+        """Obtiene los registros del dataset validados por ms-ingestion"""
+        pass

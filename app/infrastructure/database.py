@@ -35,5 +35,3 @@ def get_db():
         
 
 
-#crea las tablas que no existen
-Base.metadata.create_all(bind=engine)
